@@ -7,7 +7,7 @@ use aya_ebpf::{
     programs::TracePointContext,
 };
 use aya_log_ebpf::info;
-use my_textreplace_common::MAX_POSSIBLE_ADDRS;
+use my_textreplace_common::*;
 
 #[map]
 // Map to hold the File Descriptors from 'openat' calls
@@ -37,7 +37,6 @@ pub fn some_handle_close_exit(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_close_exit(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
     Ok(0)
 }
 
@@ -50,7 +49,6 @@ pub fn some_handle_openat_enter(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_openat_enter(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
     Ok(0)
 }
 
@@ -63,7 +61,17 @@ pub fn some_handle_openat_exit(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_openat_exit(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
+    info!(&ctx, "filename_len is {}", unsafe { filename_len });
+    info!(&ctx, "filename is {}", unsafe {
+        core::str::from_utf8_unchecked(&filename)
+    });
+    info!(&ctx, "text_len is {}", unsafe { text_len });
+    info!(&ctx, "text_find is {}", unsafe {
+        core::str::from_utf8_unchecked(&text_find)
+    });
+    info!(&ctx, "text_replace is {}", unsafe {
+        core::str::from_utf8_unchecked(&text_replace)
+    });
     Ok(0)
 }
 
@@ -76,7 +84,6 @@ pub fn some_handle_read_enter(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_read_enter(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
     Ok(0)
 }
 
@@ -89,7 +96,16 @@ pub fn some_find_possible_addrs(ctx: TracePointContext) -> u32 {
 }
 
 fn find_possible_addrs(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "tracepoint syscalls called");
+    Ok(0)
+}
+
+#[tracepoint]
+fn check_possible_addresses(ctx: TracePointContext) -> Result<u32, u32> {
+    Ok(0)
+}
+
+#[tracepoint]
+fn overwrite_addresses(ctx: TracePointContext) -> Result<u32, u32> {
     Ok(0)
 }
 #[cfg(not(test))]

@@ -1,6 +1,6 @@
 #![feature(ascii_char)]
 use anyhow::anyhow;
-use aya::programs::TracePoint;
+use aya::{maps::ProgramArray, programs::TracePoint};
 #[rustfmt::skip]
 use log::{debug, warn};
 use clap::{Arg, ArgMatches, Command};
@@ -122,9 +122,9 @@ async fn main() -> anyhow::Result<()> {
     // like to specify the eBPF program at runtime rather than at compile-time, you can
     // reach for `Bpf::load_file` instead.
     let mut ebpf = aya::EbpfLoader::new()
-        .set_global("filename_len", &(env.filename.len() as u32 + 1), true)
+        .set_global("filename_len", &(env.filename.len() as u32), true)
         .set_global("filename", &opt.filename, true)
-        .set_global("text_len", &(env.input.len() as u32 + 1), true)
+        .set_global("text_len", &(env.input.len() as u32), true)
         .set_global("text_find", &opt.text_find, true)
         .set_global("text_replace", &opt.text_replace, true)
         .load(aya::include_bytes_aligned!(concat!(
@@ -169,6 +169,26 @@ async fn main() -> anyhow::Result<()> {
         .try_into()?;
     program_5.load()?;
     program_5.attach("syscalls", "sys_exit_read")?;
+
+    let mut jump_table = ProgramArray::try_from(ebpf.take_map("map_prog_array").unwrap())?;
+
+    let prog_0: &mut TracePoint = ebpf
+        .program_mut("check_possible_addresses")
+        .unwrap()
+        .try_into()?;
+
+    prog_0.load()?;
+    let prog_0_fd = prog_0.fd().unwrap();
+    jump_table.set(0, prog_0_fd, 0).unwrap();
+
+    let prog_1: &mut TracePoint = ebpf
+        .program_mut("overwrite_addresses")
+        .unwrap()
+        .try_into()?;
+
+    prog_1.load()?;
+    let prog_1_fd = prog_1.fd().unwrap();
+    jump_table.set(1, prog_1_fd, 0).unwrap();
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
