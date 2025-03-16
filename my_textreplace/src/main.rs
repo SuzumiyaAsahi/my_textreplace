@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             "Text Replace\n\nReplaces text in a file.\n\
             To pass in newlines use \\%'\\n' e.g.:\n    \
             ./textreplace -f /proc/modules -i ppdev -r $'aaaa\\n'\n\n\
-            USAGE: ./textreplace -f filename -i input -r output [-t 1111]",
+            USAGE: ./textreplace -f filename -i input -r output",
         ).after_help( "EXAMPLES:\n\
             Hide kernel module:\n  \
             ./textreplace -f /proc/modules -i 'joydev' -r 'cryptd'\n\

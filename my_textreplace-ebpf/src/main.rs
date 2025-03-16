@@ -1,7 +1,13 @@
 #![no_std]
 #![no_main]
 
+use core::ffi::c_void;
+
 use aya_ebpf::{
+    helpers::{
+        bpf_get_current_pid_tgid,
+        gen::{bpf_probe_read_user, bpf_probe_read_user_str},
+    },
     macros::{map, tracepoint},
     maps::{HashMap, ProgramArray},
     programs::TracePointContext,
@@ -37,19 +43,69 @@ pub fn some_handle_close_exit(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_close_exit(ctx: TracePointContext) -> Result<u32, u32> {
+    // Check if we're a process thread of interest
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let check = unsafe { map_fds.get(&pid_tgid) };
+    if check.is_none() {
+        return Ok(0);
+    }
+    // Closing file, delete fd from all maps to clean up
+    let _ = map_fds.remove(&pid_tgid);
+    let _ = map_buff_addrs.remove(&pid_tgid);
     Ok(0)
 }
 
 #[tracepoint]
-pub fn some_handle_openat_enter(ctx: TracePointContext) -> u32 {
-    match handle_openat_enter(ctx) {
-        Ok(ret) => ret,
-        Err(ret) => ret,
+fn some_handle_openat_enter(ctx: TracePointContext) -> u32 {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = pid_tgid >> 32;
+    // Get filename from arguments
+    let mut check_filename: [u8; FILENAME_LEN_MAX] = [0; FILENAME_LEN_MAX];
+    let target_filename = unsafe { ctx.read_at::<u64>(24) };
+    if target_filename.is_err() {
+        return 0;
     }
-}
+    let target_filename = target_filename.unwrap() as *const c_void;
+    // let needed_len = unsafe { filename_len + 1 } as usize;
+    if unsafe { filename_len } > FILENAME_LEN_MAX as u32 {
+        return 0;
+    }
+    let ret = unsafe {
+        bpf_probe_read_user_str(
+            check_filename.as_mut_ptr() as *mut c_void,
+            filename_len + 1,
+            target_filename,
+        )
+    };
+    if ret < 0 {
+        return 0;
+    }
+    // Check filename is our target
+    // the filename_len is a "const mut" variable,
+    // I change it at loading ebpf program by overwriting .rodata
+    unsafe {
+        // for i in 0..FILENAME_LEN_MAX as usize {
+        //     if filename[i] != check_filename[i] {
+        //         return 0;
+        //     }
+        //     if i >= filename_len as usize {
+        //         break;
+        //     }
+        // }
+        for (i, j) in filename.iter().zip(check_filename.iter()) {
+            if i != j {
+                return 0;
+            }
+        }
+    }
+    // Add pid_tgid to map for our sys_exit call
+    let zero = 0;
+    let _ = map_fds.insert(&pid_tgid, &zero, 0);
 
-fn handle_openat_enter(ctx: TracePointContext) -> Result<u32, u32> {
-    Ok(0)
+    info!(&ctx, "[TEXT_REPLACE] PID {} Filename {}", pid, unsafe {
+        core::str::from_utf8_unchecked(&filename)
+    });
+    0
 }
 
 #[tracepoint]
@@ -61,17 +117,6 @@ pub fn some_handle_openat_exit(ctx: TracePointContext) -> u32 {
 }
 
 fn handle_openat_exit(ctx: TracePointContext) -> Result<u32, u32> {
-    info!(&ctx, "filename_len is {}", unsafe { filename_len });
-    info!(&ctx, "filename is {}", unsafe {
-        core::str::from_utf8_unchecked(&filename)
-    });
-    info!(&ctx, "text_len is {}", unsafe { text_len });
-    info!(&ctx, "text_find is {}", unsafe {
-        core::str::from_utf8_unchecked(&text_find)
-    });
-    info!(&ctx, "text_replace is {}", unsafe {
-        core::str::from_utf8_unchecked(&text_replace)
-    });
     Ok(0)
 }
 
@@ -108,6 +153,7 @@ fn check_possible_addresses(ctx: TracePointContext) -> Result<u32, u32> {
 fn overwrite_addresses(ctx: TracePointContext) -> Result<u32, u32> {
     Ok(0)
 }
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
