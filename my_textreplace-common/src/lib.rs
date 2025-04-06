@@ -3,6 +3,9 @@
 pub const MAX_POSSIBLE_ADDRS: u32 = 300;
 pub const FILENAME_LEN_MAX: usize = 50;
 pub const TEXT_LEN_MAX: usize = 20;
+pub const LOCAL_BUFF_SIZE: usize = 64;
+pub const PROG_0: u32 = 0;
+pub const PROG_1: u32 = 0;
 
 // These store the name of the file to replace text in
 #[no_mangle]
