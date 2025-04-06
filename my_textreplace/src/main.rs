@@ -176,8 +176,9 @@ async fn main() -> anyhow::Result<()> {
         .program_mut("check_possible_addresses")
         .unwrap()
         .try_into()?;
-
     prog_0.load()?;
+    prog_0.attach("syscalls", "sys_exit_read")?;
+
     let prog_0_fd = prog_0.fd().unwrap();
     jump_table.set(0, prog_0_fd, 0).unwrap();
 

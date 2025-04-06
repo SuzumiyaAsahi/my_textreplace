@@ -17,21 +17,26 @@ use my_textreplace_common::*;
 
 #[map]
 // Map to hold the File Descriptors from 'openat' calls
+#[allow(non_upper_case_globals)]
 static map_fds: HashMap<u64, u32> = HashMap::<u64, u32>::with_max_entries(8192, 0);
 
 #[map]
 // Map to hold the buffer sized from 'read' calls
+#[allow(non_upper_case_globals)]
 static map_buff_addrs: HashMap<u64, u64> = HashMap::<u64, u64>::with_max_entries(8192, 0);
 
 #[map]
+#[allow(non_upper_case_globals)]
 static map_name_addrs: HashMap<u64, u64> =
     HashMap::<u64, u64>::with_max_entries(MAX_POSSIBLE_ADDRS, 0);
 
 #[map]
+#[allow(non_upper_case_globals)]
 static map_to_replace_addrs: HashMap<u64, u64> =
     HashMap::<u64, u64>::with_max_entries(MAX_POSSIBLE_ADDRS, 0);
 
 #[map]
+#[allow(non_upper_case_globals)]
 static map_prog_array: ProgramArray = ProgramArray::with_max_entries(5, 0);
 
 #[tracepoint]
@@ -42,7 +47,7 @@ pub fn some_handle_close_exit(ctx: TracePointContext) -> u32 {
     }
 }
 
-fn handle_close_exit(ctx: TracePointContext) -> Result<u32, u32> {
+fn handle_close_exit(_ctx: TracePointContext) -> Result<u32, u32> {
     // Check if we're a process thread of interest
     let pid_tgid = bpf_get_current_pid_tgid();
     let check = unsafe { map_fds.get(&pid_tgid) };
@@ -208,7 +213,7 @@ fn find_possible_addrs(ctx: TracePointContext) -> Result<u32, u32> {
     let mut local_buff: [u8; LOCAL_BUFF_SIZE] = [0; LOCAL_BUFF_SIZE];
     if read_size as usize > LOCAL_BUFF_SIZE + 1 {
         // Need to loop :-(
-        read_size += LOCAL_BUFF_SIZE as i64;
+        read_size = LOCAL_BUFF_SIZE as i64;
     }
     // Read the data returned in chunks, and note every instance
     // of the first character of our 'to find' text.
@@ -255,6 +260,45 @@ fn find_possible_addrs(ctx: TracePointContext) -> Result<u32, u32> {
 
 #[tracepoint]
 fn check_possible_addresses(ctx: TracePointContext) -> Result<u32, u32> {
+    // Check this open call is opening our target file
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = pid_tgid >> 32;
+    let pbuff_addr = unsafe { map_buff_addrs.get(&pid_tgid) };
+    if pbuff_addr.is_none() {
+        return Ok(0);
+    }
+    let mut pName_addr: Option<&u64> = None;
+    let mut name_addr = 0;
+    let mut newline_counter: u64 = 0;
+    let mut match_counter = 0;
+    let mut name: [u8; TEXT_LEN_MAX + 1] = [0; TEXT_LEN_MAX + 1];
+
+    let mut j = 0;
+    let old: u8 = 0;
+    let name_len = unsafe { text_len };
+    if name_len > TEXT_LEN_MAX as u32 {
+        return Ok(0);
+    }
+    // Go over every possibly location
+    // and check if it really does match our text
+    for i in 0..MAX_POSSIBLE_ADDRS {
+        newline_counter = i as u64;
+        pName_addr = unsafe { map_name_addrs.get(&newline_counter) };
+        if pName_addr.is_none() {
+            return Ok(0);
+        }
+        name_addr = *pName_addr.unwrap();
+        if name_addr == 0 {
+            break;
+        }
+        unsafe {
+            bpf_probe_read_user(
+                &name as *const _ as *mut c_void,
+                TEXT_LEN_MAX as u32,
+                name_addr as *const c_void,
+            );
+        }
+    }
     Ok(0)
 }
 
